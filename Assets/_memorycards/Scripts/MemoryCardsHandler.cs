@@ -96,7 +96,7 @@ namespace MemoryCards
 				slot.R = block.R - 1;
 				slot.C = block.C - 1;
 
-				bool exitsSlot = slots.Exists(i => i.R == block.R && i.C == slot.C);
+				bool exitsSlot = slots.Exists(i => i.R == block.R -1 && i.C == block.C -1);
 				if (exitsSlot)
 				{
 					Debug.LogError("Slot has value, this slot is repeat");
