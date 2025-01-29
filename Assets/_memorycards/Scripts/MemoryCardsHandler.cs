@@ -1,94 +1,63 @@
-using NUnit.Framework.Internal;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace MemoryCards
 {
 	[System.Serializable]
-    public class BoardLoader
-    {
-        [TextArea(1, 20)] public string jsonToInject = string.Empty;
-        [SerializeField] private BlocksData data = new BlocksData();
+	public class PlayerData
+	{
+		public string playerName = string.Empty;
+		public GameData gameData = new GameData();
+	}
 
-        public BlocksData Data => data;
-
-        public void LoadData(string value)
-        { 
-            data = JsonUtility.FromJson<BlocksData>(value);
-        }
-
-        public void LoadDataFromLocalJson()
-        {
-            data = new BlocksData();
-
-            if (string.IsNullOrEmpty(jsonToInject))
-                return;
-            LoadData(jsonToInject);
-        }
-
-        public bool ValidateData(int minNumCards, int maxNumCards)
-        {
-            return data.blocks.Count > 0 ? data.blocks.Count > minNumCards && data.blocks.Count < maxNumCards ? true : false : false;
-        }
-
-  //      public bool HasDuplicatePosition()
-  //      {
-		//	foreach (var block in data.blocks)
-		//	{
-  //              return data.blocks.FindAll(i => i.R == block.R && i.C == block.C).Count > 1;
-		//	}
-
-  //          return false;
-		//}
-    }
-
-    [System.Serializable]
-    public class TwiceTile
-    {
-        [SerializeField] private List<Block> blocks = new List<Block>();
-        [SerializeField] private List<Tile> tiles = new List<Tile>();
-
-        public List<Block> Blocks => blocks;
-        //public List<Tile> Tiles => tiles;
-
-        public void AddBlock(Block block)
-        {
-            blocks.Add(block);
-        }
-    }
+	[System.Serializable]
+	public class GameData
+	{
+		public int total_clicks =0;
+		public int total_time =0;
+		public int pairs = 0;
+		public int score = 0;
+	}
 
 	public class MemoryCardsHandler : MonoBehaviour
     {
+		public UnityEvent OnStartedGame;
+		public UnityEvent OnCompleteGame;
+
         [SerializeField] private MemoryCardsSettings settings;
 
         [SerializeField] private BoardLoader boardLoader = new BoardLoader();
 
-        [SerializeField] private List<TwiceTile> twiceTiles = new List<TwiceTile>();
+		[SerializeField] private AudioClip audioClipMatch;
+		[SerializeField] private AudioSource audioSourceMatch;
 
-		//private Slot[,] slots = new Slot[0,0];
 		private List<Slot> slots = new List<Slot>();
-
-		private int xBound = 0;
-        private int yBound = 0;
-
+		private int columns = 0;
+        private int rows = 0;
 		private List<Slot> slotsSelected = new List<Slot>();
+
+		private PlayerData playerData = new PlayerData();
+
+		private DateTime timeStartGame;
+		private DateTime timeEndGame;
 
 		public MemoryCardsSettings Settings => settings;
 		public BoardLoader BoardLoader => boardLoader;
-
-		//public Slot[,] Slots => slots;
 		public List<Slot> Slots => slots;
+		public PlayerData PlayerData => playerData;
 
-		//public Slot GetSlot(int row,  int col)
-		//{
-		//	return slots[row, col];
-		//}
+		public int Columns => columns;
+		public int Rows => rows;
 
 		#region Create And Validate Board
 		public bool CreateBoard()
         {
 			boardLoader.LoadDataFromLocalJson();
-			if (!boardLoader.ValidateData(settings.minNumCards, settings.maxNumCards))
+
+			if (boardLoader.ValidateData(settings.minNumCards, settings.maxNumCards, settings.sprites.Count - 1))
 			{
 				Debug.LogError("there is not a data valid for start the game.");
 				return false;
@@ -96,15 +65,12 @@ namespace MemoryCards
 
 			foreach (var block in boardLoader.Data.blocks)
 			{
-				if (block.R > yBound)
-					yBound = block.R;
+				if (block.R > rows)
+					rows = block.R;
 
-				if (block.C > xBound)
-					xBound = block.C;
+				if (block.C > columns)
+					columns = block.C;
 			}
-
-			//slots = new Slot[xBound, yBound];
-
 
 			//Verify Number Repeat
 			if (AssignNumberAndCheckRepeatPosition())
@@ -125,9 +91,6 @@ namespace MemoryCards
         {
 			foreach (var block in boardLoader.Data.blocks)
 			{
-				Debug.LogFormat("{0} - {1}", block.R , block.C);
-
-
 				Slot slot = new Slot();
 
 				slot.R = block.R - 1;
@@ -145,19 +108,8 @@ namespace MemoryCards
 				}
 
 				slots.Add(slot);
-
-				//if (slots[block.C - 1, block.R - 1].number != 0)
-				//{
-				//	Debug.LogError("Slot has value, this slot is repeat");
-    //                return true;
-				//}
-				//else
-				//{
-				//	slots[block.C - 1, block.R - 1].number = block.number;
-				//}
 			}
 
-			Debug.Log(slots.Count);
 			return false;
 		}
 
@@ -185,20 +137,31 @@ namespace MemoryCards
 		int CountOccurrences(int valueToFind)
 		{
 			return slots.FindAll(i => i.number == valueToFind).Count;
-
-			//for (int row = 0; row < slots.GetLength(0); row++)
-			//{
-			//	for (int col = 0; col < slots.GetLength(1); col++)
-			//	{
-			//		if (slots[row, col].number == valueToFind)
-			//		{
-			//			count++;
-			//		}
-			//	}
-			//}
-			//return count;
 		}
 		#endregion
+
+		private void ClearBoard()
+		{
+			while (slots.Count > 0)
+			{
+				Destroy(slots[slots.Count -1].tile.gameObject);
+				slots.RemoveAt(slots.Count - 1);
+			}
+
+			slots.Clear();
+			slots = new List<Slot>();
+		}
+
+		public void StartGame()
+		{
+			ClearBoard();
+			if(CreateBoard())
+			{
+				timeStartGame = DateTime.Now;
+				playerData = new PlayerData();
+				OnStartedGame?.Invoke();
+			}
+		}
 
 		public void CheckSlotTile(int row, int col)
 		{
@@ -213,27 +176,45 @@ namespace MemoryCards
 			if (slotsSelected.Contains(slot))
 				return;
 
+			playerData.gameData.total_clicks++;
 			slotsSelected.Add(slot);
 
 			if(slotsSelected.Count == 2)
 			{
-				bool isMatched = slotsSelected[0].number.Equals(slotsSelected[1].number);
-				
-				if(isMatched)
-				{
-					slotsSelected.ForEach(i => i.SetMatched());
-				}
-				else
-				{
-					slotsSelected.ForEach(i => i.DeselectSlot());
-				}
-
-				slotsSelected.Clear();
+				StartCoroutine(CheckSlotsSelected());
 			}
 
 			CheckGameState();
 		}
 
+		private IEnumerator	CheckSlotsSelected()
+		{
+			EnableSlots(false);
+			bool isMatched = slotsSelected[0].number.Equals(slotsSelected[1].number);
+
+			if (isMatched)
+			{
+				slotsSelected.ForEach(i => i.SetMatched());
+				playerData.gameData.pairs++;
+
+				audioSourceMatch.clip = audioClipMatch;
+				if (audioSourceMatch != null)
+					audioSourceMatch.Play();
+			}
+			else
+			{
+				yield return new WaitForSeconds(0.25f);
+				slotsSelected.ForEach(i => i.DeselectSlot());
+			}
+
+			slotsSelected.Clear();
+			EnableSlots(true);
+		}
+
+		private void EnableSlots(bool value)
+		{
+			slots.ForEach(i => i.tile.Button.enabled = value);
+		}
 
 		private void CheckGameState()
 		{
@@ -241,7 +222,22 @@ namespace MemoryCards
 
 			if (win)
 			{
-				Debug.Log("win");
+				timeEndGame = DateTime.Now;
+
+				TimeSpan difference = timeEndGame - timeStartGame;
+				int seconds = (int)difference.TotalSeconds;
+				playerData.gameData.total_time = seconds;
+
+				int pairsScore = 500 /(playerData.gameData.total_clicks / playerData.gameData.pairs);
+				int timeScore = 300 / (playerData.gameData.total_time / playerData.gameData.pairs);
+				int totalScore = pairsScore + timeScore;
+
+				if (totalScore < 0)
+					totalScore = 0;
+
+				playerData.gameData.score = totalScore;
+
+				OnCompleteGame?.Invoke();
 			}
 		}
 	}
